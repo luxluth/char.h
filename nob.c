@@ -12,10 +12,12 @@ int main(int argc, char **argv) {
   Cmd cmd = {0};
   cmd_append(&cmd, "clang", "-Wall", "-Wextra", "-o", BUILD_DIR "test",
              "test.c");
-  cmd_run(&cmd);
+  if (!cmd_run(&cmd))
+    return 1;
 
   cmd_append(&cmd, BUILD_DIR "test");
-  cmd_run(&cmd);
+  if (!cmd_run(&cmd))
+    return 1;
 
   return 0;
 }
