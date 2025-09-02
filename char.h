@@ -366,7 +366,7 @@ CHARDEF bool char_string_iter_next(Char_StringIter *it, Char_Char *out_char) {
 #endif // CHAR_STRIP_PREFIX_GUARD_
 
 /* ----------------------------------------------------------------------------
-MIT - licence
+MIT - license
 
 Copyright (c) 2025 Delphin Blehoussi
 
