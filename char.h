@@ -75,6 +75,10 @@
 #define StrArg(s) (int)(s).count, (s).items
 #endif /* StrArg */
 
+#ifndef CharArg
+#define CharArg(s) (int)(s).utf8_len, (s).data
+#endif /* CharArg */
+
 thread_local static uint8_t __char_temp[4];
 
 // It is a dynamic array of utf-8 codepoints
@@ -84,6 +88,7 @@ thread_local static uint8_t __char_temp[4];
 // This structure can be printed as follow:
 //     printf(StrFmt"\n", StrArg(str));
 typedef struct {
+  bool __locked;
   uint8_t *items;
   size_t count;
   size_t capacity;
@@ -91,13 +96,17 @@ typedef struct {
   size_t len;
 } Char_String;
 
-typedef enum {
-  CHAR_UTF8_INVALID = 0,
-  CHAR_UTF8_ONE_BYTE = 1,
-  CHAR_UTF8_TWO_BYTE = 2,
-  CHAR_UTF8_THREE_BYTE = 3,
-  CHAR_UTF8_FOUR_BYTE = 4,
-} CHAR_UTF8_TYPE;
+typedef struct {
+  Char_String *str;
+  size_t index;
+
+  size_t __offest;
+} Char_StringIter;
+
+typedef struct {
+  uint8_t data[4];
+  size_t utf8_len;
+} Char_Char;
 
 // Create a string structure from the default c string
 CHARDEF Char_String char_string_from_cstr(const char *chars);
@@ -125,6 +134,18 @@ CHARDEF bool char_string_push_utf8(Char_String *str, const uint8_t *p,
 
 // Append the contents of `other` to `s`.
 CHARDEF bool char_string_concat(Char_String *s, const Char_String *other);
+
+// Create a code-point iterator starting at the beginning.
+// Locking modifications to the string
+CHARDEF Char_StringIter char_string_iter_begin(Char_String *s);
+
+// Unlock modifications to the string, and clearing the iterator
+CHARDEF void char_string_iter_end(Char_StringIter *it);
+
+// Advance iterator by one code point.
+// Writes decoded code point into `out_char`. out_char can be `NULL`
+// Returns `false` at end
+CHARDEF bool char_string_iter_next(Char_StringIter *it, Char_Char *out_char);
 
 #endif // CHAR_H_
 
@@ -205,28 +226,17 @@ CHARDEF bool __char_utf8_encode(uint32_t cp, uint8_t out[4], size_t *w) {
   CHAR_TODO("__char_utf8_encode");
 }
 
-CHARDEF CHAR_UTF8_TYPE __char_utf8_decode_next(const uint8_t *p, size_t width,
-                                               uint8_t out[4], size_t *read) {
+CHARDEF bool __char_utf8_decode_next(const uint8_t *p, size_t width,
+                                     uint8_t out[4], size_t *read) {
   if (__char_utf8_validate(p, width, read)) {
     size_t n = *read;
     // Copy bytes out
     for (size_t i = 0; i < n; ++i)
       out[i] = p[i];
 
-    switch (n) {
-    case 1:
-      return CHAR_UTF8_ONE_BYTE;
-    case 2:
-      return CHAR_UTF8_TWO_BYTE;
-    case 3:
-      return CHAR_UTF8_THREE_BYTE;
-    case 4:
-      return CHAR_UTF8_FOUR_BYTE;
-    default:
-      CHAR_UNREACHABLE("Should be a valid utf-8");
-    }
+    return true;
   } else {
-    return CHAR_UTF8_INVALID;
+    return false;
   }
 }
 
@@ -240,13 +250,17 @@ CHARDEF Char_String char_string_from_cstr(const char *chars) {
 }
 
 CHARDEF void char_string_clear(Char_String *str) {
-  str->count = 0;
-  str->len = 0;
+  if (!str->__locked) {
+    str->count = 0;
+    str->len = 0;
+  }
 }
 
 CHARDEF void char_string_dealloc(Char_String *str) {
-  char_da_free(str);
-  str->len = 0;
+  if (!str->__locked) {
+    char_da_free(str);
+    str->len = 0;
+  }
 }
 
 CHARDEF Char_String char_string_clone(const Char_String *s) {
@@ -268,13 +282,13 @@ CHARDEF char *char_string_to_cstr(const Char_String *s) {
 
 CHARDEF bool char_string_push_utf8(Char_String *str, const uint8_t *p,
                                    size_t len) {
+  if (str->__locked)
+    return false;
   size_t i = 0;
   while (i < len) {
     size_t read = 0;
-    CHAR_UTF8_TYPE kind =
-        __char_utf8_decode_next(p + i, len - i, __char_temp, &read);
 
-    if (kind == CHAR_UTF8_INVALID) {
+    if (!__char_utf8_decode_next(p + i, len - i, __char_temp, &read)) {
       return false;
     }
 
@@ -292,6 +306,40 @@ CHARDEF bool char_string_concat(Char_String *s, const Char_String *other) {
   return char_string_push_utf8(s, other->items, other->count);
 }
 
+CHARDEF Char_StringIter char_string_iter_begin(Char_String *s) {
+  s->__locked = true;
+
+  return (Char_StringIter){
+      .str = s,
+  };
+}
+
+CHARDEF void char_string_iter_end(Char_StringIter *it) {
+  it->str->__locked = false;
+  it->index = 0;
+  it->__offest = 0;
+  it->str = NULL;
+}
+
+CHARDEF bool char_string_iter_next(Char_StringIter *it, Char_Char *out_char) {
+  Char_Char fallback_char = {0};
+  Char_Char *used_char = &fallback_char;
+  if (out_char != NULL) {
+    used_char = out_char;
+  }
+
+  if (__char_utf8_decode_next(it->str->items + it->__offest,
+                              it->str->count - it->__offest, used_char->data,
+                              &used_char->utf8_len)) {
+
+    it->__offest += used_char->utf8_len;
+    it->index += 1;
+    return true;
+  } else {
+    return false;
+  }
+}
+
 #endif // CHAR_IMPLEMENTATION
 
 #ifndef CHAR_STRIP_PREFIX_GUARD_
@@ -299,6 +347,8 @@ CHARDEF bool char_string_concat(Char_String *s, const Char_String *other) {
 
 #ifdef CHAR_STRIP_PREFIX
 #define String Char_String
+#define StringIter Char_StringIter
+#define Char Char_Char
 #define string_from_cstr char_string_from_cstr
 #define string_clear char_string_clear
 #define string_dealloc char_string_dealloc
@@ -307,6 +357,9 @@ CHARDEF bool char_string_concat(Char_String *s, const Char_String *other) {
 #define string_to_cstr char_string_to_cstr
 #define string_push_utf8 char_string_push_utf8
 #define string_concat char_string_concat
+#define string_iter_begin char_string_iter_begin
+#define string_iter_end char_string_iter_end
+#define string_iter_next char_string_iter_next
 
 #endif // CHAR_STRIP_PREFIX
 
