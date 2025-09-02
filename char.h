@@ -112,8 +112,12 @@ typedef struct {
   size_t utf8_len;
 } Char_Char;
 
-// Create a string structure from the default c string
+// Create a string from the default c string
 CHARDEF Char_String char_string_from_cstr(const char *chars);
+
+// Create a string from raw parts
+CHARDEF Char_String char_string_from_raw_data(const uint8_t *chars,
+                                              size_t count);
 
 // Reset the string’s length to zero without freeing capacity.
 CHARDEF void char_string_clear(Char_String *str);
@@ -291,13 +295,17 @@ terminate:
   return true;
 }
 
-CHARDEF Char_String char_string_from_cstr(const char *chars) {
+CHARDEF Char_String char_string_from_raw_data(const uint8_t *chars,
+                                              size_t count) {
   Char_String str = {0};
-  size_t len = strlen(chars);
-  const uint8_t *p = (const uint8_t *)chars;
-  char_string_push_utf8(&str, p, len);
+  char_string_push_utf8(&str, chars, count);
 
   return str;
+}
+
+CHARDEF Char_String char_string_from_cstr(const char *chars) {
+  size_t len = strlen(chars);
+  return char_string_from_raw_data((const uint8_t *)chars, len);
 }
 
 CHARDEF void char_string_clear(Char_String *str) {
@@ -454,6 +462,7 @@ CHARDEF bool char_string_insert(Char_String *s, const Char_String other,
 #define String Char_String
 #define StringIter Char_StringIter
 #define Char Char_Char
+#define string_from_raw_data char_string_from_raw_data
 #define string_from_cstr char_string_from_cstr
 #define string_clear char_string_clear
 #define string_dealloc char_string_dealloc
