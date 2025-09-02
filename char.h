@@ -104,7 +104,7 @@ typedef struct {
   Char_String *str;
   size_t index;
 
-  size_t __offest;
+  size_t __offset;
 } Char_StringIter;
 
 typedef struct {
@@ -167,9 +167,13 @@ CHARDEF bool char_string_char_at(const Char_String *s, size_t index,
 CHARDEF bool char_string_insert(Char_String *s, const Char_String other,
                                 size_t at_index);
 
+// Remove character at position `index`.
+// - Shifts subsequent bytes backward.
+CHARDEF bool char_string_remove(Char_String *s, size_t index);
+
 #endif // CHAR_H_
 
-/* #define CHAR_IMPLEMENTATION */
+#define CHAR_IMPLEMENTATION
 // use #define CHAR_IMPLEMENTATION
 // to include also the library implementation
 #ifdef CHAR_IMPLEMENTATION
@@ -257,8 +261,10 @@ CHARDEF bool __char_utf8_decode_next(const uint8_t *p, size_t width,
   if (__char_utf8_validate(p, width, read)) {
     size_t n = *read;
     // Copy bytes out
-    for (size_t i = 0; i < n; ++i)
-      out[i] = p[i];
+    if (out != NULL) {
+      for (size_t i = 0; i < n; ++i)
+        out[i] = p[i];
+    }
 
     return true;
   } else {
@@ -268,12 +274,14 @@ CHARDEF bool __char_utf8_decode_next(const uint8_t *p, size_t width,
 
 // Convert code-point index -> byte offset.
 CHARDEF bool __char_string_byte_offset_for_index(const Char_String *s,
-                                                 size_t index, size_t *off) {
+                                                 size_t index, size_t *off,
+                                                 size_t *prev_off) {
 
   assert(off != NULL &&
          "__char_string_byte_offset_for_index: "
          "This function got no point to be called if the result is not needed");
 
+  size_t previous_offset = 0;
   size_t offset = 0;
   size_t current_index = 0;
   if (index == 0)
@@ -282,6 +290,7 @@ CHARDEF bool __char_string_byte_offset_for_index(const Char_String *s,
     size_t read = 0;
     if (__char_utf8_decode_next(s->items + offset, s->count - offset, NULL,
                                 &read)) {
+      previous_offset = offset;
       offset += read;
       if (current_index == index)
         break;
@@ -291,6 +300,9 @@ CHARDEF bool __char_string_byte_offset_for_index(const Char_String *s,
     }
   }
 terminate:
+  if (prev_off != NULL) {
+    *prev_off = previous_offset;
+  }
   *off = offset;
   return true;
 }
@@ -319,6 +331,9 @@ CHARDEF void char_string_dealloc(Char_String *str) {
   if (!str->__locked) {
     char_da_free(str);
     str->len = 0;
+    str->count = 0;
+    str->items = NULL;
+    str->capacity = 0;
   }
 }
 
@@ -376,7 +391,7 @@ CHARDEF Char_StringIter char_string_iter_begin(Char_String *s) {
 CHARDEF void char_string_iter_end(Char_StringIter *it) {
   it->str->__locked = false;
   it->index = 0;
-  it->__offest = 0;
+  it->__offset = 0;
   it->str = NULL;
 }
 
@@ -387,11 +402,11 @@ CHARDEF bool char_string_iter_next(Char_StringIter *it, Char_Char *out_char) {
     used_char = out_char;
   }
 
-  if (__char_utf8_decode_next(it->str->items + it->__offest,
-                              it->str->count - it->__offest, used_char->data,
+  if (__char_utf8_decode_next(it->str->items + it->__offset,
+                              it->str->count - it->__offset, used_char->data,
                               &used_char->utf8_len)) {
 
-    it->__offest += used_char->utf8_len;
+    it->__offset += used_char->utf8_len;
     it->index += 1;
     return true;
   } else {
@@ -429,15 +444,21 @@ CHARDEF bool char_string_char_at(const Char_String *s, size_t index,
 
 CHARDEF bool char_string_insert(Char_String *s, const Char_String other,
                                 size_t at_index) {
-  if (at_index > s->len) {
+  bool result = true;
+
+  if (at_index > s->len || s->__locked) {
     return false;
   }
+
   Char_String prev_clone = char_string_clone(s);
   size_t offset_at = 0;
 
   if (!__char_string_byte_offset_for_index(s, __size_t_safe_sub(at_index),
-                                           &offset_at))
-    return false;
+                                           &offset_at, NULL)) {
+    result = false;
+    goto cleanup;
+  }
+
   s->len = at_index;
   s->count = offset_at;
 
@@ -449,7 +470,35 @@ CHARDEF bool char_string_insert(Char_String *s, const Char_String other,
 
   s->len += prev_clone.len - at_index;
 
-  return true;
+cleanup:
+  char_string_dealloc(&prev_clone);
+  return result;
+}
+
+CHARDEF bool char_string_remove(Char_String *s, size_t index) {
+  bool result = true;
+
+  if (index >= s->len || s->__locked)
+    return false;
+
+  Char_String prev_clone = char_string_clone(s);
+  size_t offset_at = 0; // end of target cp
+  size_t prev_off = 0;  // start of target cp
+
+  if (!__char_string_byte_offset_for_index(s, index, &offset_at, &prev_off)) {
+    result = false;
+    goto cleanup;
+  }
+
+  s->count = prev_off; // keep prefix
+
+  char_da_append_many(s, prev_clone.items + offset_at, // append tail
+                      prev_clone.count - offset_at);
+  s->len = prev_clone.len - 1;
+
+cleanup:
+  char_string_dealloc(&prev_clone);
+  return result;
 }
 
 #endif // CHAR_IMPLEMENTATION
@@ -476,6 +525,7 @@ CHARDEF bool char_string_insert(Char_String *s, const Char_String other,
 #define string_iter_next char_string_iter_next
 #define string_char_at char_string_char_at
 #define string_insert char_string_insert
+#define string_remove char_string_remove
 
 #endif // CHAR_STRIP_PREFIX
 

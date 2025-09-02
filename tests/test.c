@@ -13,6 +13,16 @@ void debug_string(const Char_String *s) {
 }
 
 int main(void) {
+  Nob_String_Builder sb = {0};
+  nob_read_entire_file("texts/victor_hugo_full.txt", &sb);
+  String victor_text = string_from_raw_data((uint8_t *)sb.items, sb.count);
+  debug_string(&victor_text);
+
+  Nob_String_Builder sb1 = {0};
+  nob_read_entire_file("texts/demo_utf8.txt", &sb1);
+  String utf8_text = string_from_raw_data((uint8_t *)sb1.items, sb1.count);
+  debug_string(&utf8_text);
+
   String str = S("Hello, world ! 🤡");
   String str2 = S(" <- This is the :clown: emoji");
   string_concat(&str, &str2);
@@ -53,15 +63,12 @@ int main(void) {
   string_insert(&empty_str, S(" - I think I love you"), empty_str.len);
   debug_string(&empty_str);
 
-  Nob_String_Builder sb = {0};
-  nob_read_entire_file("texts/victor_hugo_full.txt", &sb);
-  String victor_text = string_from_raw_data((uint8_t *)sb.items, sb.count);
-  debug_string(&victor_text);
-
-  Nob_String_Builder sb1 = {0};
-  nob_read_entire_file("texts/demo_utf8.txt", &sb1);
-  String utf8_text = string_from_raw_data((uint8_t *)sb1.items, sb1.count);
-  debug_string(&utf8_text);
+  String t_remove = S("Too much 'a' in anaanas🍍");
+  debug_string(&t_remove);
+  string_remove(&t_remove, 19);
+  debug_string(&t_remove);
+  string_remove(&t_remove, t_remove.len - 1);
+  debug_string(&t_remove);
 
   return 0;
 }
