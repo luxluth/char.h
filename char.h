@@ -76,7 +76,7 @@
 #endif /* StrArg */
 
 #ifndef CharArg
-#define CharArg(s) (int)(s).utf8_len, (s).data
+#define CharArg(c) (int)(c).utf8_len, (c).data
 #endif /* CharArg */
 
 thread_local static uint8_t __char_temp[4];
@@ -147,9 +147,14 @@ CHARDEF void char_string_iter_end(Char_StringIter *it);
 // Returns `false` at end
 CHARDEF bool char_string_iter_next(Char_StringIter *it, Char_Char *out_char);
 
+// Retrieve the index-th character (0-based).
+// Complexity: O(n)
+CHARDEF bool char_string_char_at(const Char_String *s, size_t index,
+                                 Char_Char *out_char);
+
 #endif // CHAR_H_
 
-/* #define CHAR_IMPLEMENTATION */
+#define CHAR_IMPLEMENTATION
 // use #define CHAR_IMPLEMENTATION
 // to include also the library implementation
 #ifdef CHAR_IMPLEMENTATION
@@ -340,6 +345,30 @@ CHARDEF bool char_string_iter_next(Char_StringIter *it, Char_Char *out_char) {
   }
 }
 
+CHARDEF bool char_string_char_at(const Char_String *s, size_t index,
+                                 Char_Char *out_char) {
+  if (index >= s->len)
+    return false;
+
+  Char_Char fallback_char = {0};
+  Char_Char *used_char = &fallback_char;
+  if (out_char != NULL) {
+    used_char = out_char;
+  }
+
+  size_t offset = 0;
+  for (size_t curr_idx = 0; curr_idx <= index; curr_idx++) {
+    if (__char_utf8_decode_next(s->items + offset, s->count - offset,
+                                used_char->data, &used_char->utf8_len)) {
+      offset += used_char->utf8_len;
+    } else {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 #endif // CHAR_IMPLEMENTATION
 
 #ifndef CHAR_STRIP_PREFIX_GUARD_
@@ -360,6 +389,7 @@ CHARDEF bool char_string_iter_next(Char_StringIter *it, Char_Char *out_char) {
 #define string_iter_begin char_string_iter_begin
 #define string_iter_end char_string_iter_end
 #define string_iter_next char_string_iter_next
+#define string_char_at char_string_char_at
 
 #endif // CHAR_STRIP_PREFIX
 

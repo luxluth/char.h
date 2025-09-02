@@ -20,6 +20,17 @@ int main(void) {
   }
   string_iter_end(&it);
 
+  Char temp_char = {0};
+  string_char_at(&str, 0, &temp_char);
+  printf("First character is `" StrFmt "`\n", CharArg(temp_char));
+
+  string_char_at(&str, str.len - 1, &temp_char);
+  printf("Last character is `" StrFmt "`\n", CharArg(temp_char));
+
+  string_char_at(&str, 15, &temp_char);
+  printf("The clown emoji is the 15th character `" StrFmt "`\n",
+         CharArg(temp_char));
+
   printf("Text is: " StrFmt "\n", StrArg(str));
   return 0;
 }
