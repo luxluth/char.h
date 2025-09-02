@@ -79,6 +79,10 @@
 #define CharArg(c) (int)(c).utf8_len, (c).data
 #endif /* CharArg */
 
+#ifndef char_S
+#define char_S(cstr) char_string_from_cstr(cstr)
+#endif /* char_S */
+
 thread_local static uint8_t __char_temp[4];
 
 // It is a dynamic array of utf-8 codepoints
@@ -148,16 +152,29 @@ CHARDEF void char_string_iter_end(Char_StringIter *it);
 CHARDEF bool char_string_iter_next(Char_StringIter *it, Char_Char *out_char);
 
 // Retrieve the index-th character (0-based).
+// Return `false` when the data is out of bounds
 // Complexity: O(n)
 CHARDEF bool char_string_char_at(const Char_String *s, size_t index,
                                  Char_Char *out_char);
 
+// Insert a code point before position index.
+// - Shifts subsequent bytes forward.
+// - Returns false if index out of range
+CHARDEF bool char_string_insert(Char_String *s, const Char_String other,
+                                size_t at_index);
+
 #endif // CHAR_H_
 
-#define CHAR_IMPLEMENTATION
+/* #define CHAR_IMPLEMENTATION */
 // use #define CHAR_IMPLEMENTATION
 // to include also the library implementation
 #ifdef CHAR_IMPLEMENTATION
+
+static inline size_t __size_t_safe_sub(size_t x) {
+  if (x == 0)
+    return 0;
+  return x - 1;
+}
 
 static inline bool __char_is_cont(uint8_t b) {
   return (b & 0b11000000) == 0b10000000;
@@ -243,6 +260,35 @@ CHARDEF bool __char_utf8_decode_next(const uint8_t *p, size_t width,
   } else {
     return false;
   }
+}
+
+// Convert code-point index -> byte offset.
+CHARDEF bool __char_string_byte_offset_for_index(const Char_String *s,
+                                                 size_t index, size_t *off) {
+
+  assert(off != NULL &&
+         "__char_string_byte_offset_for_index: "
+         "This function got no point to be called if the result is not needed");
+
+  size_t offset = 0;
+  size_t current_index = 0;
+  if (index == 0)
+    goto terminate;
+  for (;;) {
+    size_t read = 0;
+    if (__char_utf8_decode_next(s->items + offset, s->count - offset, NULL,
+                                &read)) {
+      offset += read;
+      if (current_index == index)
+        break;
+      current_index += 1;
+    } else {
+      return false;
+    }
+  }
+terminate:
+  *off = offset;
+  return true;
 }
 
 CHARDEF Char_String char_string_from_cstr(const char *chars) {
@@ -357,14 +403,43 @@ CHARDEF bool char_string_char_at(const Char_String *s, size_t index,
   }
 
   size_t offset = 0;
-  for (size_t curr_idx = 0; curr_idx <= index; curr_idx++) {
+  size_t current_index = 0;
+  for (;;) {
     if (__char_utf8_decode_next(s->items + offset, s->count - offset,
                                 used_char->data, &used_char->utf8_len)) {
       offset += used_char->utf8_len;
+      if (current_index == index)
+        break;
+      current_index += 1;
     } else {
       return false;
     }
   }
+
+  return true;
+}
+
+CHARDEF bool char_string_insert(Char_String *s, const Char_String other,
+                                size_t at_index) {
+  if (at_index > s->len) {
+    return false;
+  }
+  Char_String prev_clone = char_string_clone(s);
+  size_t offset_at = 0;
+
+  if (!__char_string_byte_offset_for_index(s, __size_t_safe_sub(at_index),
+                                           &offset_at))
+    return false;
+  s->len = at_index;
+  s->count = offset_at;
+
+  char_da_append_many(s, other.items, other.count);
+  s->len += other.len;
+
+  char_da_append_many(s, prev_clone.items + offset_at,
+                      prev_clone.count - offset_at);
+
+  s->len += prev_clone.len - at_index;
 
   return true;
 }
@@ -375,6 +450,7 @@ CHARDEF bool char_string_char_at(const Char_String *s, size_t index,
 #define CHAR_STRIP_PREFIX_GUARD_
 
 #ifdef CHAR_STRIP_PREFIX
+#define S char_S
 #define String Char_String
 #define StringIter Char_StringIter
 #define Char Char_Char
@@ -390,6 +466,7 @@ CHARDEF bool char_string_char_at(const Char_String *s, size_t index,
 #define string_iter_end char_string_iter_end
 #define string_iter_next char_string_iter_next
 #define string_char_at char_string_char_at
+#define string_insert char_string_insert
 
 #endif // CHAR_STRIP_PREFIX
 

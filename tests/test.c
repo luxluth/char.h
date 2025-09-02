@@ -3,9 +3,16 @@
 #include "char.h"
 #include <stdio.h>
 
+void debug_string(const Char_String *s) {
+  fprintf(stderr,
+          "String{.len = %lu, .count = %lu, .capacity = %lu, .items = \"" StrFmt
+          "\"}\n",
+          s->len, s->count, s->capacity, StrArg(*s));
+}
+
 int main(void) {
-  String str = string_from_cstr("Hello, world ! 🤡");
-  String str2 = string_from_cstr(" <- This is the :clown: emoji");
+  String str = S("Hello, world ! 🤡");
+  String str2 = S(" <- This is the :clown: emoji");
   string_concat(&str, &str2);
 
   StringIter it = string_iter_begin(&str);
@@ -32,5 +39,17 @@ int main(void) {
          CharArg(temp_char));
 
   printf("Text is: " StrFmt "\n", StrArg(str));
+
+  debug_string(&str);
+  string_insert(&str, S("🎈"), 15);
+  debug_string(&str);
+
+  String empty_str = {0};
+  debug_string(&empty_str);
+  string_insert(&empty_str, S("♥️"), 0);
+  printf("From empty text to: " StrFmt "\n", StrArg(empty_str));
+  string_insert(&empty_str, S(" - I think I love you"), empty_str.len);
+  debug_string(&empty_str);
+
   return 0;
 }
