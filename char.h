@@ -176,6 +176,16 @@ CHARDEF bool char_string_remove(Char_String *s, size_t index);
 // - Returns false if range invalid.
 CHARDEF bool char_string_substring(const Char_String *s, size_t start,
                                    size_t len, Char_String *out);
+// Lexicographic comparison by bytes.
+// - Returns <0, 0, >0 like `strcmp`
+CHARDEF int char_string_compare(const Char_String *a, const Char_String *b);
+
+// Lexicographic comparison based on utf-8 codepoints.
+// It does not implement locale-aware collation (e.g., treating “ä” is “a”) or
+// normalization (NFC/NFD).
+// - Returns <0, 0, >0 like `strcmp`
+CHARDEF int char_string_compare_codepoints(const Char_String *a,
+                                           const Char_String *b);
 
 #endif // CHAR_H_
 
@@ -526,6 +536,55 @@ CHARDEF bool char_string_substring(const Char_String *s, size_t start,
   return true;
 }
 
+CHARDEF int char_string_compare(const Char_String *a, const Char_String *b) {
+  size_t n = (a->count < b->count) ? a->count : b->count;
+
+  for (size_t i = 0; i < n; i++) {
+    if (a->items[i] != b->items[i]) {
+      return (int)a->items[i] - (int)b->items[i];
+    }
+  }
+
+  // If all equal so far, shorter string is the "less"
+  if (a->count < b->count)
+    return -1;
+  if (a->count > b->count)
+    return 1;
+  return 0;
+}
+
+CHARDEF int char_string_compare_codepoints(const Char_String *a,
+                                           const Char_String *b) {
+  size_t ia = 0, ib = 0;
+
+  while (ia < a->count && ib < b->count) {
+    uint32_t cpa = 0, cpb = 0;
+    size_t read_a = 0, read_b = 0;
+
+    if (!__char_utf8_decode_next(a->items + ia, a->count - ia, (uint8_t *)&cpa,
+                                 &read_a)) {
+      cpa = 0xFFFFFFFFu;
+      read_a = 1;
+    }
+    if (!__char_utf8_decode_next(b->items + ib, b->count - ib, (uint8_t *)&cpb,
+                                 &read_b)) {
+      cpb = 0xFFFFFFFFu;
+      read_a = 1;
+    }
+    if (cpa != cpb)
+      return (cpa < cpb) ? -1 : 1;
+    ia += read_a;
+    ib += read_b;
+  }
+
+  // All compared code points equal so far; shorter (by bytes) is "less".
+  if (ia < a->count)
+    return 1;
+  if (ib < b->count)
+    return -1;
+  return 0;
+}
+
 #endif // CHAR_IMPLEMENTATION
 
 #ifndef CHAR_STRIP_PREFIX_GUARD_
@@ -552,12 +611,14 @@ CHARDEF bool char_string_substring(const Char_String *s, size_t start,
 #define string_insert char_string_insert
 #define string_remove char_string_remove
 #define string_substring char_string_substring
+#define string_compare char_string_compare
+#define string_compare_codepoints char_string_compare_codepoints
 
 #endif // CHAR_STRIP_PREFIX
 
 #endif // CHAR_STRIP_PREFIX_GUARD_
 
-/* ----------------------------------------------------------------------------
+/*-----------------------------------------------------------------------------
 MIT - license
 
 Copyright (c) 2025 Delphin Blehoussi
@@ -582,5 +643,5 @@ SOFTWARE.
 
 -----------------------------------------------------------------------------*/
 /*-----------------------------------------------------------------------------
-Great Thanks to the Alexey Kutepov
+Great Thanks to Alexey Kutepov
 -----------------------------------------------------------------------------*/

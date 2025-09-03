@@ -76,5 +76,8 @@ int main(void) {
   string_substring(&sub_of_it, 0, 9, &out_sub);
   debug_string(&out_sub);
 
+  int order = string_compare_codepoints(&victor_text, &victor_text);
+  printf("order = %d == 0\n", order);
+
   return 0;
 }
