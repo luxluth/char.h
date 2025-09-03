@@ -70,5 +70,11 @@ int main(void) {
   string_remove(&t_remove, t_remove.len - 1);
   debug_string(&t_remove);
 
+  String sub_of_it = S("This Part and This Other One");
+  debug_string(&sub_of_it);
+  String out_sub = {0};
+  string_substring(&sub_of_it, 0, 9, &out_sub);
+  debug_string(&out_sub);
+
   return 0;
 }

@@ -171,9 +171,15 @@ CHARDEF bool char_string_insert(Char_String *s, const Char_String other,
 // - Shifts subsequent bytes backward.
 CHARDEF bool char_string_remove(Char_String *s, size_t index);
 
+// Extract substring of len code points starting at `start`.
+// - Stores result in `out`.
+// - Returns false if range invalid.
+CHARDEF bool char_string_substring(const Char_String *s, size_t start,
+                                   size_t len, Char_String *out);
+
 #endif // CHAR_H_
 
-#define CHAR_IMPLEMENTATION
+/* #define CHAR_IMPLEMENTATION */
 // use #define CHAR_IMPLEMENTATION
 // to include also the library implementation
 #ifdef CHAR_IMPLEMENTATION
@@ -277,10 +283,6 @@ CHARDEF bool __char_string_byte_offset_for_index(const Char_String *s,
                                                  size_t index, size_t *off,
                                                  size_t *prev_off) {
 
-  assert(off != NULL &&
-         "__char_string_byte_offset_for_index: "
-         "This function got no point to be called if the result is not needed");
-
   size_t previous_offset = 0;
   size_t offset = 0;
   size_t current_index = 0;
@@ -303,7 +305,8 @@ terminate:
   if (prev_off != NULL) {
     *prev_off = previous_offset;
   }
-  *off = offset;
+  if (off != NULL)
+    *off = offset;
   return true;
 }
 
@@ -341,6 +344,7 @@ CHARDEF Char_String char_string_clone(const Char_String *s) {
   Char_String new_string = {0};
   char_da_append_many(&new_string, s->items, s->count);
   new_string.len = s->len;
+  new_string.__locked = false;
   return new_string;
 }
 
@@ -425,8 +429,7 @@ CHARDEF bool char_string_char_at(const Char_String *s, size_t index,
     used_char = out_char;
   }
 
-  size_t offset = 0;
-  size_t current_index = 0;
+  size_t offset = 0, current_index = 0;
   for (;;) {
     if (__char_utf8_decode_next(s->items + offset, s->count - offset,
                                 used_char->data, &used_char->utf8_len)) {
@@ -501,6 +504,28 @@ cleanup:
   return result;
 }
 
+CHARDEF bool char_string_substring(const Char_String *s, size_t start,
+                                   size_t len, Char_String *out) {
+  if (start > s->len || (start + len) > s->len) {
+    return false;
+  }
+
+  size_t start_offset = 0, end_offset = 0;
+
+  if (!__char_string_byte_offset_for_index(s, start, NULL, &start_offset))
+    return false;
+  if (!__char_string_byte_offset_for_index(s, start + len, NULL, &end_offset))
+    return false;
+
+  Char_String sub_str = {0};
+  sub_str.len = len;
+  char_da_append_many(&sub_str, s->items + start_offset,
+                      end_offset - start_offset);
+
+  *out = sub_str;
+  return true;
+}
+
 #endif // CHAR_IMPLEMENTATION
 
 #ifndef CHAR_STRIP_PREFIX_GUARD_
@@ -526,6 +551,7 @@ cleanup:
 #define string_char_at char_string_char_at
 #define string_insert char_string_insert
 #define string_remove char_string_remove
+#define string_substring char_string_substring
 
 #endif // CHAR_STRIP_PREFIX
 
