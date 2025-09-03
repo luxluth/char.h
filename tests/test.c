@@ -79,5 +79,12 @@ int main(void) {
   int order = string_compare_codepoints(&victor_text, &victor_text);
   printf("order = %d == 0\n", order);
 
+  if (string_equals(&utf8_text, &utf8_text)) {
+    printf("equals :: ok\n");
+  } else {
+    printf("equals :: fail\n");
+    return 1;
+  }
+
   return 0;
 }

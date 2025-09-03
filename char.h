@@ -187,6 +187,9 @@ CHARDEF int char_string_compare(const Char_String *a, const Char_String *b);
 CHARDEF int char_string_compare_codepoints(const Char_String *a,
                                            const Char_String *b);
 
+// Return true if strings have identical contents
+CHARDEF bool char_string_equals(const Char_String *a, const Char_String *b);
+
 #endif // CHAR_H_
 
 /* #define CHAR_IMPLEMENTATION */
@@ -585,6 +588,35 @@ CHARDEF int char_string_compare_codepoints(const Char_String *a,
   return 0;
 }
 
+CHARDEF bool char_string_equals(const Char_String *a, const Char_String *b) {
+  if (a->len != b->len || a->count != b->count)
+    return false;
+
+  size_t ia = 0, ib = 0;
+
+  while (ia < a->count && ib < b->count) {
+    uint32_t cpa = 0, cpb = 0;
+    size_t read_a = 0, read_b = 0;
+
+    if (!__char_utf8_decode_next(a->items + ia, a->count - ia, (uint8_t *)&cpa,
+                                 &read_a)) {
+      cpa = 0xFFFFFFFFu;
+      read_a = 1;
+    }
+    if (!__char_utf8_decode_next(b->items + ib, b->count - ib, (uint8_t *)&cpb,
+                                 &read_b)) {
+      cpb = 0xFFFFFFFFu;
+      read_a = 1;
+    }
+    if (cpa != cpb)
+      return false;
+    ia += read_a;
+    ib += read_b;
+  }
+
+  return true;
+}
+
 #endif // CHAR_IMPLEMENTATION
 
 #ifndef CHAR_STRIP_PREFIX_GUARD_
@@ -613,6 +645,7 @@ CHARDEF int char_string_compare_codepoints(const Char_String *a,
 #define string_substring char_string_substring
 #define string_compare char_string_compare
 #define string_compare_codepoints char_string_compare_codepoints
+#define string_equals char_string_equals
 
 #endif // CHAR_STRIP_PREFIX
 
