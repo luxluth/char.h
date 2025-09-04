@@ -97,6 +97,7 @@ typedef struct {
   size_t count;
   size_t capacity;
 
+  // codepoints count
   size_t len;
 } Char_String;
 
@@ -111,6 +112,19 @@ typedef struct {
   uint8_t data[4];
   size_t utf8_len;
 } Char_Char;
+
+typedef struct {
+  // in which direction to slice
+  // - `false` -> L - R | `true` -> R - L
+  // - default to `false`
+  bool reverse;
+  // the ouput buffer
+  Char_String *out;
+  // which index to start slicing from
+  size_t start;
+  // length of the substring
+  size_t len;
+} Char_Substr_Opt;
 
 // Create a string from the default c string
 CHARDEF Char_String char_string_from_cstr(const char *chars);
@@ -174,8 +188,12 @@ CHARDEF bool char_string_remove(Char_String *s, size_t index);
 // Extract substring of len code points starting at `start`.
 // - Stores result in `out`.
 // - Returns false if range invalid.
-CHARDEF bool char_string_substring(const Char_String *s, size_t start,
-                                   size_t len, Char_String *out);
+CHARDEF bool char_string_substring_opt(const Char_String *s,
+                                       Char_Substr_Opt opts);
+
+#define char_string_substring(s, ...)                                          \
+  char_string_substring_opt((s), (Char_Substr_Opt){__VA_ARGS__})
+
 // Lexicographic comparison by bytes.
 // - Returns <0, 0, >0 like `strcmp`
 CHARDEF int char_string_compare(const Char_String *a, const Char_String *b);
@@ -190,9 +208,17 @@ CHARDEF int char_string_compare_codepoints(const Char_String *a,
 // Return true if strings have identical contents
 CHARDEF bool char_string_equals(const Char_String *a, const Char_String *b);
 
+// Return true if `s` begins with `prefix`
+CHARDEF bool char_string_starts_with(const Char_String *s,
+                                     const Char_String *prefix);
+
+// Return true if `s` ends with `suffix`
+CHARDEF bool char_string_ends_with(const Char_String *s,
+                                   const Char_String *suffix);
+
 #endif // CHAR_H_
 
-/* #define CHAR_IMPLEMENTATION */
+#define CHAR_IMPLEMENTATION
 // use #define CHAR_IMPLEMENTATION
 // to include also the library implementation
 #ifdef CHAR_IMPLEMENTATION
@@ -517,25 +543,49 @@ cleanup:
   return result;
 }
 
-CHARDEF bool char_string_substring(const Char_String *s, size_t start,
-                                   size_t len, Char_String *out) {
-  if (start > s->len || (start + len) > s->len) {
-    return false;
+CHARDEF bool char_string_substring_opt(const Char_String *s,
+                                       Char_Substr_Opt opts) {
+  if (!opts.reverse) {
+    if (opts.start > s->len || (opts.start + opts.len) > s->len) {
+      return false;
+    }
+  } else {
+    if (opts.start > s->len || ((int64_t)opts.start - opts.len) < 0) {
+      return false;
+    }
   }
 
-  size_t start_offset = 0, end_offset = 0;
+  size_t start_offset = 0, end_offset = 0, start_index = 0, end_index = 0;
+  if (!opts.reverse) {
+    start_index = opts.start;
+    end_index = opts.start + opts.len;
+  } else {
+    start_index = opts.start - opts.len;
+    end_index = opts.start;
+  }
 
-  if (!__char_string_byte_offset_for_index(s, start, NULL, &start_offset))
-    return false;
-  if (!__char_string_byte_offset_for_index(s, start + len, NULL, &end_offset))
-    return false;
+  if (!opts.reverse) {
+    if (!__char_string_byte_offset_for_index(s, start_index, NULL,
+                                             &start_offset))
+      return false;
+    if (!__char_string_byte_offset_for_index(s, end_index, NULL, &end_offset))
+      return false;
+  } else {
+    if (!__char_string_byte_offset_for_index(s, start_index, &start_offset,
+                                             NULL))
+      return false;
+    if (!__char_string_byte_offset_for_index(s, end_index, &end_offset, NULL))
+      return false;
+  }
 
   Char_String sub_str = {0};
-  sub_str.len = len;
+  sub_str.len = opts.len;
   char_da_append_many(&sub_str, s->items + start_offset,
                       end_offset - start_offset);
 
-  *out = sub_str;
+  if (opts.out != NULL) {
+    *opts.out = sub_str;
+  }
   return true;
 }
 
@@ -617,6 +667,32 @@ CHARDEF bool char_string_equals(const Char_String *a, const Char_String *b) {
   return true;
 }
 
+CHARDEF bool char_string_starts_with(const Char_String *s,
+                                     const Char_String *prefix) {
+  if (prefix->len > s->len)
+    return false;
+
+  Char_String temp = {0};
+  char_string_substring(s, .out = &temp, .start = 0, .len = prefix->len, );
+  bool result = char_string_equals(prefix, &temp);
+  char_string_dealloc(&temp);
+  return result;
+}
+
+CHARDEF bool char_string_ends_with(const Char_String *s,
+                                   const Char_String *suffix) {
+  if (suffix->len > s->len)
+    return false;
+
+  Char_String temp = {0};
+  char_string_substring(s, .reverse = true, .out = &temp, .start = s->len - 1,
+                        .len = suffix->len);
+
+  bool result = char_string_equals(suffix, &temp);
+  char_string_dealloc(&temp);
+  return result;
+}
+
 #endif // CHAR_IMPLEMENTATION
 
 #ifndef CHAR_STRIP_PREFIX_GUARD_
@@ -642,10 +718,13 @@ CHARDEF bool char_string_equals(const Char_String *a, const Char_String *b) {
 #define string_char_at char_string_char_at
 #define string_insert char_string_insert
 #define string_remove char_string_remove
+#define string_substring_opt char_string_substring_opt
 #define string_substring char_string_substring
 #define string_compare char_string_compare
 #define string_compare_codepoints char_string_compare_codepoints
 #define string_equals char_string_equals
+#define string_starts_with char_string_starts_with
+#define string_ends_with char_string_ends_with
 
 #endif // CHAR_STRIP_PREFIX
 

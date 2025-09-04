@@ -6,10 +6,9 @@
 #include <stdio.h>
 
 void debug_string(const Char_String *s) {
-  fprintf(stderr,
-          "String{.len = %lu, .count = %lu, .capacity = %lu, .items = \"" StrFmt
-          "\"}\n",
-          s->len, s->count, s->capacity, StrArg(*s));
+  printf("String{.len = %lu, .count = %lu, .capacity = %lu, .items = \"" StrFmt
+         "\"}\n",
+         s->len, s->count, s->capacity, StrArg(*s));
 }
 
 int main(void) {
@@ -72,9 +71,14 @@ int main(void) {
 
   String sub_of_it = S("This Part and This Other One");
   debug_string(&sub_of_it);
-  String out_sub = {0};
-  string_substring(&sub_of_it, 0, 9, &out_sub);
-  debug_string(&out_sub);
+  String first_out_sub = {0};
+  string_substring(&sub_of_it, .start = 0, .len = 9, .out = &first_out_sub);
+  debug_string(&first_out_sub);
+
+  String end_out_sub = {0};
+  string_substring(&sub_of_it, .start = sub_of_it.len - 1, .len = 14,
+                   .out = &end_out_sub, .reverse = true);
+  debug_string(&end_out_sub);
 
   int order = string_compare_codepoints(&victor_text, &victor_text);
   printf("order = %d == 0\n", order);
@@ -84,6 +88,18 @@ int main(void) {
   } else {
     printf("equals :: fail\n");
     return 1;
+  }
+
+  if (string_starts_with(&sub_of_it, &first_out_sub)) {
+    printf("starts_with :: ok\n");
+  } else {
+    printf("starts_with :: fail\n");
+  }
+
+  if (string_ends_with(&sub_of_it, &end_out_sub)) {
+    printf("ends_with :: ok\n");
+  } else {
+    printf("ends_with :: fail\n");
   }
 
   return 0;
